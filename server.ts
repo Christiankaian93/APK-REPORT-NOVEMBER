@@ -157,26 +157,33 @@ async function startServer() {
     : (process.env.PORT ? parseInt(process.env.PORT, 10) : 3000);
 
   app.use(express.json({ limit: '50mb' }));
+  app.use(express.text({ type: ['text/*', 'application/json'], limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
   // Health checks for Cloud Run & monitoring probes
   app.get(["/api/health", "/health", "/healthz", "/_health"], (_req, res) => {
     res.status(200).json({ status: "ok" });
   });
 
-  // In-memory active presence tracker (eliminates redundant Firestore writes per day!)
+  // In-memory active presence tracker (tanpa snapshot, zero Firestore read/write quota!)
   const activePresenceUsers = new Map<string, { uid: string; email: string; outlet: string; lastSeen: string; timestamp: number; photoURL?: string; displayName?: string }>();
 
   app.post("/api/presence", (req, res) => {
     try {
-      const { uid, email, outlet, photoURL, displayName } = req.body;
-      const key = uid || email || 'anonymous';
-      if (key) {
+      let body = req.body || {};
+      if (typeof body === 'string') {
+        try { body = JSON.parse(body); } catch {}
+      }
+      const { uid, email, outlet, photoURL, displayName } = body;
+      const cleanEmail = (email || '').toLowerCase().trim();
+      const key = uid || cleanEmail || 'anonymous';
+      if (key && cleanEmail) {
         activePresenceUsers.set(key, {
           uid: key,
-          email: email || 'anonymous',
+          email: cleanEmail,
           outlet: outlet || 'SEMUA OUTLET',
           photoURL: photoURL || '',
-          displayName: displayName || (email ? email.split('@')[0] : 'User'),
+          displayName: displayName || (cleanEmail ? cleanEmail.split('@')[0] : 'User'),
           lastSeen: new Date().toISOString(),
           timestamp: Date.now()
         });
@@ -187,16 +194,51 @@ async function startServer() {
     }
   });
 
+  // Logout / Keluar: Langsung hapus user dari status online saat itu juga (0 detik)
+  const removeUserPresence = (req: any, res: any) => {
+    try {
+      let body = req.body || {};
+      if (typeof body === 'string') {
+        try { body = JSON.parse(body); } catch {}
+      }
+      const query = req.query || {};
+      const targetEmail = (body.email || query.email || '').toLowerCase().trim();
+      const targetUid = (body.uid || query.uid || '').trim();
+
+      const keysToDelete: string[] = [];
+      activePresenceUsers.forEach((user, key) => {
+        const uEmail = (user.email || '').toLowerCase().trim();
+        const uUid = (user.uid || '').trim();
+        if (
+          (targetUid && (key === targetUid || uUid === targetUid || key.startsWith(targetUid) || (uEmail && targetUid.includes(uEmail)))) ||
+          (targetEmail && (uEmail === targetEmail || key.includes(targetEmail)))
+        ) {
+          keysToDelete.push(key);
+        }
+      });
+
+      keysToDelete.forEach(k => activePresenceUsers.delete(k));
+      res.json({ success: true, removedCount: keysToDelete.length, remaining: activePresenceUsers.size });
+    } catch {
+      res.status(500).json({ error: "Failed to clear presence" });
+    }
+  };
+
+  app.post("/api/presence/logout", removeUserPresence);
+  app.get("/api/presence/logout", removeUserPresence);
+  app.delete("/api/presence", removeUserPresence);
+
   app.get("/api/presence", (_req, res) => {
     try {
       const now = Date.now();
-      const cutoff = now - 60 * 1000; // 60 seconds cutoff for active presence
+      // Cutoff cepat 15 detik untuk user yang menutup tab/aplikasi
+      const cutoff = now - 15 * 1000;
       const activeList: any[] = [];
       const seenEmails = new Set<string>();
 
       activePresenceUsers.forEach((user, key) => {
         if (user.timestamp > cutoff) {
-          const emailKey = (user.email || key).toLowerCase();
+          const emailKey = (user.email || key).toLowerCase().trim();
           if (!seenEmails.has(emailKey)) {
             seenEmails.add(emailKey);
             activeList.push(user);

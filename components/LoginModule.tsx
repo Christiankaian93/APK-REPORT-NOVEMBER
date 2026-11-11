@@ -159,6 +159,18 @@ const LoginModule: React.FC<Props> = ({ onLogin, onPublicView, isFullScreen, onT
   };
 
   const handleResetSession = async () => {
+    const priorEmail = firebaseUser?.email || emailInput;
+    if (priorEmail) {
+      try {
+        fetch(`/api/presence/logout?email=${encodeURIComponent(priorEmail)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: priorEmail }),
+          keepalive: true
+        }).catch(() => {});
+      } catch {}
+    }
+
     try {
       const { signOut } = await import('firebase/auth');
       await signOut(auth);

@@ -6,7 +6,7 @@ import { safeStorage, safeClipboard, safeWindow } from './lib/safeStorage';
 import { toLocalDateStr } from './lib/dateUtils';
 import { calculateLeaveEntitlement } from './lib/staffUtils';
 import { auth, db } from './firebase';
-import { doc, getDoc, setDoc, serverTimestamp, collection, query, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import Header from './components/Header';
@@ -425,7 +425,7 @@ const App: React.FC = () => {
     return unsubscribe;
   }, [user.isLoggedIn, syncTrigger]);
 
-  // Realtime Presence Tracker for Concurrent Active Users (Cross-tab & Multi-device)
+  // Realtime Presence Tracker for Concurrent Active Users (Server-driven, Tanpa Firestore Snapshots / Zero Quota)
   useEffect(() => {
     if (!user.email) return;
 
@@ -455,26 +455,10 @@ const App: React.FC = () => {
           })
         });
       } catch (e) {}
-
-      // Fallback update to Firestore presence doc if user is signed in
-      if (auth.currentUser && !isQuotaExceeded()) {
-        try {
-          const presenceRef = doc(db, 'presence', uid);
-          await setDoc(presenceRef, {
-            uid,
-            email: auth.currentUser.email || user.email,
-            outlet: user.selectedOutlet || 'SEMUA OUTLET',
-            photoURL: userPhoto,
-            displayName: userDisplayName,
-            lastSeen: new Date().toISOString(),
-            timestamp: serverTimestamp()
-          }, { merge: true });
-        } catch {}
-      }
     };
 
     sendHeartbeat();
-    const heartbeatTimer = setInterval(sendHeartbeat, 10000); // 10s heartbeat
+    const heartbeatTimer = setInterval(sendHeartbeat, 6000); // 6s heartbeat
 
     const fetchPresence = async () => {
       try {
@@ -489,11 +473,33 @@ const App: React.FC = () => {
     };
 
     fetchPresence();
-    const pollTimer = setInterval(fetchPresence, 3000); // 3s fast poll for instant sync
+    const pollTimer = setInterval(fetchPresence, 2000); // 2s fast poll for immediate sync across all users
+
+    const handleUnload = () => {
+      const payload = JSON.stringify({ uid: presenceKey, email: user.email });
+      if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+        try {
+          const blob = new Blob([payload], { type: 'application/json' });
+          navigator.sendBeacon(`/api/presence/logout?email=${encodeURIComponent(user.email)}&uid=${encodeURIComponent(presenceKey)}`, blob);
+        } catch {}
+      } else {
+        fetch(`/api/presence/logout?email=${encodeURIComponent(user.email)}&uid=${encodeURIComponent(presenceKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('beforeunload', handleUnload);
+    window.addEventListener('pagehide', handleUnload);
 
     return () => {
       clearInterval(heartbeatTimer);
       clearInterval(pollTimer);
+      window.removeEventListener('beforeunload', handleUnload);
+      window.removeEventListener('pagehide', handleUnload);
     };
   }, [user.email, user.selectedOutlet, user.photoURL, user.displayName, auth.currentUser?.uid]);
   
@@ -2080,21 +2086,49 @@ const App: React.FC = () => {
 
   const handleLogout = async () => {
     isLoggingOutRef.current = true;
+    const loggingOutEmail = user.email;
+    const currentUid = auth.currentUser?.uid || '';
+    const tabSessionId = sessionStorage.getItem('SH_TAB_SESSION_ID') || '';
+    const presenceKey = currentUid ? `${currentUid}_${tabSessionId}` : '';
+
     try {
-      // 1. Immediately wipe all user session tokens & chosen outlet from storage
+      // 1. Instantly remove this user from local onlineUsers state (0 ms delay - immediate UI disappearance)
+      if (loggingOutEmail) {
+        setOnlineUsers(prev => prev.filter(u => u.email?.toLowerCase() !== loggingOutEmail.toLowerCase()));
+      }
+
+      // 2. Instantly notify server to wipe active presence entry (0 delay for all other users)
+      if (loggingOutEmail) {
+        const payload = JSON.stringify({ email: loggingOutEmail, uid: presenceKey });
+        fetch(`/api/presence/logout?email=${encodeURIComponent(loggingOutEmail)}&uid=${encodeURIComponent(presenceKey)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+
+        if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+          try {
+            const blob = new Blob([payload], { type: 'application/json' });
+            navigator.sendBeacon(`/api/presence/logout?email=${encodeURIComponent(loggingOutEmail)}&uid=${encodeURIComponent(presenceKey)}`, blob);
+          } catch {}
+        }
+      }
+
+      // 3. Immediately wipe all user session tokens & chosen outlet from storage
       safeStorage.removeItem('BARN_USER_SESSION');
       safeStorage.removeItem('MANUAL_USER_EMAIL');
       safeStorage.removeItem('BARN_SELECTED_OUTLET');
       safeStorage.removeItem('BARN_USER_PHOTO');
       safeStorage.removeItem('BARN_USER_NAME');
 
-      // 2. Immediately reset state so LoginModule renders cleanly on the very first click
+      // 4. Immediately reset state so LoginModule renders cleanly on the very first click
       setIsPublicView(false);
       setUser({ email: '', isLoggedIn: false, selectedOutlet: undefined, photoURL: undefined, displayName: undefined });
       setIsAdmin(false);
       setActiveModule(ModuleType.DASHBOARD);
 
-      // 3. Complete auth sign-out safely
+      // 5. Complete auth sign-out safely
       await signOut(auth).catch(() => {});
     } catch (error) {
       console.error("Logout failed:", error);

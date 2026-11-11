@@ -10,10 +10,7 @@ import {
   setDoc, 
   doc, 
   serverTimestamp, 
-  Timestamp,
-  deleteDoc,
-  where,
-  getDocs
+  Timestamp
 } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatMessage, Presence, Outlet } from '../types';
@@ -287,57 +284,10 @@ const RealtimeFeatures: React.FC<Props> = ({
     } catch (e) {}
   }, [auth.currentUser]);
 
-  // Heartbeat/Presence Logic (Server API primary, completely eliminates 10,000+ daily Firestore writes!)
+  // Synchronize presence only via fast server API (zero Firestore snapshot / getDocs / setDoc quota)
   useEffect(() => {
-    if (!user.email) return;
-
-    const uid = auth.currentUser?.uid || user.email.toLowerCase();
-
-    const userPhoto = user.photoURL || auth.currentUser?.photoURL || '';
-    const userDisplayName = user.displayName || auth.currentUser?.displayName || (user.email ? user.email.split('@')[0] : 'User');
-
-    const updatePresence = async () => {
-      try {
-        await fetch('/api/presence', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            uid,
-            email: user.email,
-            outlet: user.selectedOutlet || 'UNKNOWN',
-            photoURL: userPhoto,
-            displayName: userDisplayName
-          })
-        });
-      } catch (err) {
-        // Fallback to Firestore only if server endpoint fails and quota allows
-        if (auth.currentUser && !isQuotaExceeded()) {
-          try {
-            const presenceRef = doc(db, 'presence', uid);
-            await setDoc(presenceRef, {
-              uid,
-              email: auth.currentUser.email || user.email || 'anonymous',
-              outlet: user.selectedOutlet || 'UNKNOWN',
-              photoURL: userPhoto,
-              displayName: userDisplayName,
-              lastSeen: new Date().toISOString(),
-              timestamp: serverTimestamp()
-            }, { merge: true });
-          } catch {}
-        }
-      }
-    };
-
-    updatePresence();
-    const interval = setInterval(updatePresence, 45000); // Every 45s to server (0 database writes!)
-
-    return () => {
-      clearInterval(interval);
-    };
-  }, [user.email, user.selectedOutlet, user.photoURL, user.displayName, auth.currentUser?.uid]);
-
-  // Listen to Online Users via Server API (eliminates continuous document snapshot reads!)
-  useEffect(() => {
+    // If parent App.tsx already provides live onlineUsers, no redundant polling needed
+    if (propOnlineUsers) return;
     if (!user.email) return;
 
     const fetchOnlineUsers = async () => {
@@ -347,35 +297,15 @@ const RealtimeFeatures: React.FC<Props> = ({
           const data = await res.json();
           if (Array.isArray(data.users)) {
             setOnlineUsers(data.users as Presence[]);
-            return;
           }
         }
       } catch (e) {}
-
-      // Fallback: If server failed and quota allows, query Firestore presence
-      if (auth.currentUser && !isQuotaExceeded()) {
-        try {
-          const q = query(collection(db, 'presence'));
-          const snapshot = await getDocs(q);
-          const users: Presence[] = [];
-          const now = Date.now();
-          const thresholdAgo = now - onlineTimeLimit * 60 * 1000;
-          snapshot.forEach((doc) => {
-            const data = doc.data();
-            const lastSeenTime = data.lastSeen ? new Date(data.lastSeen).getTime() : 0;
-            if (lastSeenTime > thresholdAgo) {
-              users.push(data as Presence);
-            }
-          });
-          setOnlineUsers(users);
-        } catch {}
-      }
     };
 
     fetchOnlineUsers();
-    const interval = setInterval(fetchOnlineUsers, 15000); // Poll server every 15s (zero quota cost)
+    const interval = setInterval(fetchOnlineUsers, 2500); // Poll server every 2.5s (zero Firestore cost)
     return () => clearInterval(interval);
-  }, [user.email, auth.currentUser?.uid, onlineTimeLimit]);
+  }, [user.email, propOnlineUsers]);
 
   // Listen to Chat Messages
   useEffect(() => {
