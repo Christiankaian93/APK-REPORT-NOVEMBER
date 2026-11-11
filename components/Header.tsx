@@ -14,7 +14,7 @@ interface Props {
   onModuleSelect: (module: ModuleType, tab?: any) => void;
   activeModule: ModuleType;
   isAdmin: boolean;
-  user: { email: string; selectedOutlet?: string };
+  user: { email: string; selectedOutlet?: string; photoURL?: string; displayName?: string };
   syncStatus: SyncStatus;
   isRefreshing?: boolean;
   notifications: Notification[];
@@ -237,16 +237,37 @@ const Header: React.FC<Props> = ({
       {/* Right Section: User Info & Controls */}
       <div className="flex items-center gap-4 w-full md:w-auto justify-between md:justify-end border-t border-white/5 md:border-none pt-3 md:pt-0">
         {user.email && (
-          <div className="flex items-center gap-2 bg-slate-900/50 px-3 py-1.5 rounded-xl border border-white/5">
+          <div className="flex items-center gap-2.5 bg-slate-900/60 hover:bg-slate-900/80 transition-colors px-3 py-1.5 rounded-2xl border border-white/10 shadow-lg">
             <div className="text-right">
-              <div className="text-[8px] font-black text-white uppercase leading-none truncate max-w-[80px] md:max-w-[120px]">{(user.email || '').split('@')[0]}</div>
-              <div className="text-[7px] font-black text-indigo-400 uppercase leading-none mt-1 truncate max-w-[80px] md:max-w-[120px]">{user.selectedOutlet || 'No Outlet'}</div>
+              <div className="text-[9px] font-black text-white uppercase leading-none truncate max-w-[85px] md:max-w-[130px]">
+                {user.displayName || (user.email || '').split('@')[0]}
+              </div>
+              <div className="text-[7px] font-black text-indigo-400 uppercase leading-none mt-1 truncate max-w-[85px] md:max-w-[130px]">
+                {user.selectedOutlet || 'No Outlet'}
+              </div>
               <div className={`text-[7px] font-bold ${status.color} uppercase flex items-center gap-1 mt-1 justify-end`}>
                 <i className={`fas ${status.icon} text-[6px]`}></i> {status.label}
               </div>
             </div>
-            <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center text-[9px] font-black shadow-lg shrink-0">
-              {user.email.charAt(0).toUpperCase()}
+            
+            {/* Google Profile Photo with Fallback */}
+            <div className="relative shrink-0">
+              <div className="w-8 h-8 rounded-xl overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-[10px] font-black text-white shadow-md border border-white/20">
+                {user.photoURL ? (
+                  <img 
+                    src={user.photoURL} 
+                    alt={user.displayName || user.email}
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLImageElement).style.display = 'none';
+                    }}
+                  />
+                ) : (
+                  <span>{(user.email || 'U').charAt(0).toUpperCase()}</span>
+                )}
+              </div>
+              <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-slate-900 ring-1 ring-emerald-400/50"></span>
             </div>
           </div>
         )}

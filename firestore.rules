@@ -123,6 +123,8 @@ service cloud.firestore {
              && data.lastSeen is string && data.lastSeen.size() <= 128
              && (data.timestamp == request.time || data.timestamp is timestamp)
              && (data.outlet is string && data.outlet.size() <= 128 || !data.keys().hasAny(['outlet']))
+             && (data.photoURL is string && data.photoURL.size() <= 1024 || !data.keys().hasAny(['photoURL']))
+             && (data.displayName is string && data.displayName.size() <= 128 || !data.keys().hasAny(['displayName']))
              && data.keys().hasAll(['email', 'uid', 'lastSeen', 'timestamp']);
     }
 
@@ -133,6 +135,7 @@ service cloud.firestore {
              && data.timestamp is string && data.timestamp.size() <= 128
              && (data.serverTime == request.time || data.serverTime is timestamp)
              && (data.outlet is string && data.outlet.size() <= 128 || !data.keys().hasAny(['outlet']))
+             && (data.photoURL is string && data.photoURL.size() <= 1024 || !data.keys().hasAny(['photoURL']))
              && data.keys().hasAll(['text', 'senderEmail', 'senderName', 'timestamp', 'serverTime']);
     }
 

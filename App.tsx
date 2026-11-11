@@ -390,13 +390,17 @@ const App: React.FC = () => {
 
       const manualEmail = safeStorage.getItem('MANUAL_USER_EMAIL') || safeStorage.getItem('BARN_USER_SESSION') || '';
       const resolvedEmail = (firebaseUser && firebaseUser.email) || (firebaseUser && firebaseUser.isAnonymous ? manualEmail : null) || (manualEmail || null);
+      const photoURL = (firebaseUser && firebaseUser.photoURL) || safeStorage.getItem('BARN_USER_PHOTO') || '';
+      const displayName = (firebaseUser && firebaseUser.displayName) || safeStorage.getItem('BARN_USER_NAME') || '';
+      if (firebaseUser?.photoURL) safeStorage.setItem('BARN_USER_PHOTO', firebaseUser.photoURL);
+      if (firebaseUser?.displayName) safeStorage.setItem('BARN_USER_NAME', firebaseUser.displayName);
 
       if (resolvedEmail && !isLoggingOutRef.current) {
         const savedOutlet = safeStorage.getItem('BARN_SELECTED_OUTLET') as Outlet;
         if (savedOutlet && !isLoggingOutRef.current) {
           handleLogin(resolvedEmail, savedOutlet);
         } else {
-          setUser({ email: resolvedEmail, isLoggedIn: false });
+          setUser({ email: resolvedEmail, isLoggedIn: false, photoURL, displayName });
         }
       } else {
         setUser({ email: '', isLoggedIn: false });
@@ -1193,7 +1197,9 @@ const App: React.FC = () => {
       console.warn('[handleLogin] Notice during login data hydration:', loginError);
     } finally {
       if (isLoggingOutRef.current) return;
-      setUser({ email: cleanEmail, isLoggedIn: true, selectedOutlet: outletKey });
+      const photoURL = auth.currentUser?.photoURL || safeStorage.getItem('BARN_USER_PHOTO') || '';
+      const displayName = auth.currentUser?.displayName || safeStorage.getItem('BARN_USER_NAME') || '';
+      setUser({ email: cleanEmail, isLoggedIn: true, selectedOutlet: outletKey, photoURL, displayName });
       setIsPublicView(false);
       safeStorage.setItem('BARN_USER_SESSION', cleanEmail);
       safeStorage.setItem('MANUAL_USER_EMAIL', cleanEmail);
@@ -2006,10 +2012,12 @@ const App: React.FC = () => {
       safeStorage.removeItem('BARN_USER_SESSION');
       safeStorage.removeItem('MANUAL_USER_EMAIL');
       safeStorage.removeItem('BARN_SELECTED_OUTLET');
+      safeStorage.removeItem('BARN_USER_PHOTO');
+      safeStorage.removeItem('BARN_USER_NAME');
 
       // 2. Immediately reset state so LoginModule renders cleanly on the very first click
       setIsPublicView(false);
-      setUser({ email: '', isLoggedIn: false, selectedOutlet: undefined });
+      setUser({ email: '', isLoggedIn: false, selectedOutlet: undefined, photoURL: undefined, displayName: undefined });
       setIsAdmin(false);
       setActiveModule(ModuleType.DASHBOARD);
 

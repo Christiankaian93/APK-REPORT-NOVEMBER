@@ -164,16 +164,18 @@ async function startServer() {
   });
 
   // In-memory active presence tracker (eliminates 14,000+ redundant Firestore writes per day!)
-  const activePresenceUsers = new Map<string, { uid: string; email: string; outlet: string; lastSeen: string; timestamp: number }>();
+  const activePresenceUsers = new Map<string, { uid: string; email: string; outlet: string; lastSeen: string; timestamp: number; photoURL?: string; displayName?: string }>();
 
   app.post("/api/presence", (req, res) => {
     try {
-      const { uid, email, outlet } = req.body;
+      const { uid, email, outlet, photoURL, displayName } = req.body;
       if (uid) {
         activePresenceUsers.set(uid, {
           uid,
           email: email || 'anonymous',
           outlet: outlet || 'UNKNOWN',
+          photoURL: photoURL || '',
+          displayName: displayName || (email ? email.split('@')[0] : 'User'),
           lastSeen: new Date().toISOString(),
           timestamp: Date.now()
         });

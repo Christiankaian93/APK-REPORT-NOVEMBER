@@ -52,6 +52,8 @@ const LoginModule: React.FC<Props> = ({ onLogin, onPublicView, isFullScreen, onT
         setEmailInput(user.email);
         safeStorage.setItem('MANUAL_USER_EMAIL', user.email);
         safeStorage.setItem('BARN_USER_SESSION', user.email);
+        if (user.photoURL) safeStorage.setItem('BARN_USER_PHOTO', user.photoURL);
+        if (user.displayName) safeStorage.setItem('BARN_USER_NAME', user.displayName);
       } else if (!user) {
         setFirebaseUser(null);
       }
@@ -107,6 +109,10 @@ const LoginModule: React.FC<Props> = ({ onLogin, onPublicView, isFullScreen, onT
       const result = await signInWithPopup(auth, provider);
       if (result.user.email) {
         const userEmail = result.user.email.toLowerCase();
+        const photo = result.user.photoURL || '';
+        const name = result.user.displayName || '';
+        if (photo) safeStorage.setItem('BARN_USER_PHOTO', photo);
+        if (name) safeStorage.setItem('BARN_USER_NAME', name);
         setEmailInput(userEmail);
         safeStorage.setItem('MANUAL_USER_EMAIL', userEmail);
         safeStorage.setItem('BARN_USER_SESSION', userEmail);
@@ -162,6 +168,8 @@ const LoginModule: React.FC<Props> = ({ onLogin, onPublicView, isFullScreen, onT
     safeStorage.removeItem('MANUAL_USER_EMAIL');
     safeStorage.removeItem('BARN_SELECTED_OUTLET');
     safeStorage.removeItem('BARN_USER_SESSION');
+    safeStorage.removeItem('BARN_USER_PHOTO');
+    safeStorage.removeItem('BARN_USER_NAME');
     setFirebaseUser(null);
     setEmailInput('');
     setSelectedOutlet('');
@@ -230,12 +238,29 @@ const LoginModule: React.FC<Props> = ({ onLogin, onPublicView, isFullScreen, onT
         {/* Active Session Badge if detected */}
         {activeSessionEmail && (
           <div className="mb-4 p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl flex items-center justify-between gap-3 text-left">
-            <div className="flex items-center gap-2.5 overflow-hidden">
-              <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center text-indigo-400 flex-shrink-0">
-                <i className="fas fa-user-check text-xs"></i>
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="relative shrink-0">
+                <div className="w-10 h-10 rounded-full overflow-hidden bg-indigo-600/30 border border-indigo-400/30 flex items-center justify-center text-white font-black text-sm shadow-md">
+                  {(firebaseUser?.photoURL || safeStorage.getItem('BARN_USER_PHOTO')) ? (
+                    <img 
+                      src={firebaseUser?.photoURL || safeStorage.getItem('BARN_USER_PHOTO') || ''} 
+                      alt={firebaseUser?.displayName || activeSessionEmail}
+                      className="w-full h-full object-cover"
+                      referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).style.display = 'none';
+                      }}
+                    />
+                  ) : (
+                    <i className="fas fa-user-check text-xs text-indigo-400"></i>
+                  )}
+                </div>
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-500 rounded-full border-2 border-slate-900"></span>
               </div>
               <div className="overflow-hidden">
-                <p className="text-slate-400 text-[9px] font-black uppercase tracking-wider">Sesi Terdeteksi</p>
+                <p className="text-slate-400 text-[9px] font-black uppercase tracking-wider">
+                  {firebaseUser?.displayName ? `Akun Google: ${firebaseUser.displayName}` : 'Sesi Terdeteksi'}
+                </p>
                 <p className="text-white text-xs font-bold truncate max-w-[190px]">{activeSessionEmail}</p>
               </div>
             </div>

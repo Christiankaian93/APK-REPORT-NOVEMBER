@@ -181,6 +181,8 @@ export interface User {
   email: string;
   isLoggedIn: boolean;
   selectedOutlet?: Outlet;
+  photoURL?: string;
+  displayName?: string;
 }
 
 export type SyncStatus = 'online' | 'syncing' | 'offline' | 'error';
@@ -866,6 +868,8 @@ export interface Presence {
   email: string;
   lastSeen: string;
   outlet?: string;
+  photoURL?: string;
+  displayName?: string;
 }
 
 export interface ChatMessage {
@@ -876,6 +880,7 @@ export interface ChatMessage {
   timestamp: string;
   outlet?: string;
   serverTime?: any;
+  photoURL?: string;
 }
 
 export interface ExternalAuditRecord {
