@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { SyncStatus, Notification, ModuleType } from '../types';
+import React, { useState, useEffect, useMemo } from 'react';
+import { SyncStatus, Notification, ModuleType, Presence } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 
 interface Props {
@@ -21,18 +21,25 @@ interface Props {
   toast?: { message: string; type: 'success' | 'error' | 'info' } | null;
   onSidebarToggle?: () => void;
   showSidebarToggle?: boolean;
+  onlineUsers?: Presence[];
 }
 
 const Header: React.FC<Props> = ({ 
   filters, onFilterChange, onHome, 
   onRefresh, onForceSync, onAdminToggle, onLogout, onShare, onModuleSelect, activeModule, isAdmin, 
   user, syncStatus, isRefreshing, notifications, toast,
-  onSidebarToggle, showSidebarToggle
+  onSidebarToggle, showSidebarToggle, onlineUsers = []
 }) => {
   const [currentNotifIndex, setCurrentNotifIndex] = useState(0);
   const [showNotifPopup, setShowNotifPopup] = useState(false);
   const [hasNewNotif, setHasNewNotif] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
+
+  // Other users concurrently browsing the web app
+  const otherOnlineUsers = useMemo(() => {
+    if (!onlineUsers || !Array.isArray(onlineUsers)) return [];
+    return onlineUsers.filter(u => u.email?.toLowerCase() !== user.email?.toLowerCase());
+  }, [onlineUsers, user.email]);
 
   useEffect(() => {
     // Check initial state from body class
@@ -124,6 +131,67 @@ const Header: React.FC<Props> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Sedang Buka Web Bersamaan - Foto & Nama User Lain Terlihat Jelas */}
+      {otherOnlineUsers.length > 0 && (
+        <div className="mx-2 md:mx-4 px-3.5 py-2 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-slate-900/90 to-slate-900/80 border border-emerald-500/40 shadow-xl flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 text-left overflow-hidden">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="relative">
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping absolute inset-0"></span>
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 relative block"></span>
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] font-black text-emerald-400 uppercase tracking-widest whitespace-nowrap leading-none">
+                Buka Web Bersamaan ({otherOnlineUsers.length} User):
+              </span>
+              <span className="text-[7px] text-slate-400 font-bold uppercase mt-0.5 whitespace-nowrap">
+                Rekan lain yang sedang online
+              </span>
+            </div>
+          </div>
+
+          {/* List of Other Users - Foto Profil Google & Nama */}
+          <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar py-0.5 flex-1 justify-start sm:justify-end">
+            {otherOnlineUsers.map((other, idx) => (
+              <div
+                key={other.uid || other.email || idx}
+                className="flex items-center gap-2 bg-slate-800/90 hover:bg-slate-700/90 px-2.5 py-1.5 rounded-2xl border border-white/10 shrink-0 transition-all shadow-md group cursor-pointer active:scale-95"
+                title={`${other.displayName || other.email} sedang membuka ${other.outlet || 'Sistem'}`}
+              >
+                {/* Foto Profil Google User Lain */}
+                <div className="relative shrink-0">
+                  <div className="w-7 h-7 rounded-xl overflow-hidden bg-gradient-to-br from-indigo-500 to-purple-600 border border-white/20 flex items-center justify-center text-[10px] font-black text-white shadow-sm">
+                    {other.photoURL ? (
+                      <img
+                        src={other.photoURL}
+                        alt={other.displayName || other.email}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <span>{(other.displayName || other.email || 'U').charAt(0).toUpperCase()}</span>
+                    )}
+                  </div>
+                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-emerald-500 rounded-full border border-slate-900 ring-1 ring-emerald-400"></span>
+                </div>
+
+                {/* Nama & Outlet User Lain */}
+                <div className="flex flex-col leading-none text-left">
+                  <span className="text-[10px] font-black text-white group-hover:text-emerald-300 transition-colors whitespace-nowrap">
+                    {other.displayName || (other.email || '').split('@')[0]}
+                  </span>
+                  <span className="text-[7px] font-bold text-indigo-400 uppercase mt-0.5 whitespace-nowrap">
+                    {other.outlet || 'AKTIF'}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <header className="glass-card mx-2 md:mx-4 my-1 p-3 md:p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xl relative">
         {/* Notification Popup */}

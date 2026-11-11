@@ -25,16 +25,28 @@ interface Props {
   globalData?: any;
   outletMonthlyData?: any;
   filters?: any;
+  onlineUsers?: Presence[];
+  setOnlineUsers?: React.Dispatch<React.SetStateAction<Presence[]>>;
 }
 
-const RealtimeFeatures: React.FC<Props> = ({ user, isAdmin, globalData, outletMonthlyData, filters }) => {
+const RealtimeFeatures: React.FC<Props> = ({ 
+  user, isAdmin, globalData, outletMonthlyData, filters,
+  onlineUsers: propOnlineUsers,
+  setOnlineUsers: propSetOnlineUsers
+}) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [onlineUsers, setOnlineUsers] = useState<Presence[]>([]);
+  const [localOnlineUsers, setLocalOnlineUsers] = useState<Presence[]>([]);
+  const onlineUsers = propOnlineUsers || localOnlineUsers;
+  const setOnlineUsers = propSetOnlineUsers || setLocalOnlineUsers;
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [showOnlineModal, setShowOnlineModal] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [unreadCount, setUnreadCount] = useState(0);
+
+  const otherOnlineUsers = React.useMemo(() => {
+    return onlineUsers.filter(u => u.email?.toLowerCase() !== user.email?.toLowerCase());
+  }, [onlineUsers, user.email]);
 
   // Helper to format limit minutes beautifully to Indonesian "jam" / "menit"
   const formatLimitTime = (minutes: number) => {
@@ -502,18 +514,57 @@ const RealtimeFeatures: React.FC<Props> = ({ user, isAdmin, globalData, outletMo
                 </div>
               </div>
 
-              {/* Realtime Data Status */}
-              <div className="flex items-center gap-2 shrink-0">
-                <i className="fas fa-database text-[10px] text-indigo-400"></i>
-                <div className="flex flex-col">
-                  <div className="text-[9px] font-black uppercase tracking-wider text-indigo-400 leading-none">
-                    Firebase Terhubung
-                  </div>
-                  <span className="text-[7px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">
-                    Input & Lihat Data Aktif
-                  </span>
+              {/* Realtime Other Users Display with Photo and Name */}
+              {otherOnlineUsers.length > 0 ? (
+                <div className="flex items-center gap-1.5 pl-2 border-l border-white/10 shrink-0">
+                  <span className="text-[8px] font-black text-slate-400 uppercase hidden sm:inline">Online:</span>
+                  {otherOnlineUsers.slice(0, 2).map((otherUser, idx) => (
+                    <div 
+                      key={otherUser.uid || otherUser.email || idx}
+                      className="flex items-center gap-1.5 bg-slate-800/90 hover:bg-slate-700/90 px-2 py-1 rounded-xl border border-white/10 shrink-0 transition-colors shadow-sm"
+                      title={`${otherUser.displayName || otherUser.email} di ${otherUser.outlet || 'Sistem'}`}
+                    >
+                      <div className="w-5 h-5 rounded-full overflow-hidden bg-indigo-600 shrink-0 border border-white/20">
+                        {otherUser.photoURL ? (
+                          <img 
+                            src={otherUser.photoURL} 
+                            alt={otherUser.displayName || otherUser.email} 
+                            className="w-full h-full object-cover" 
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              (e.currentTarget as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <span className="text-[7px] font-black text-white flex items-center justify-center h-full">
+                            {(otherUser.displayName || otherUser.email || 'U').charAt(0).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[9px] font-black text-white truncate max-w-[80px]">
+                        {otherUser.displayName || (otherUser.email || '').split('@')[0]}
+                      </span>
+                    </div>
+                  ))}
+                  {otherOnlineUsers.length > 2 && (
+                    <span className="text-[8px] font-black text-emerald-400 px-1.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                      +{otherOnlineUsers.length - 2} lagi
+                    </span>
+                  )}
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-center gap-2 shrink-0">
+                  <i className="fas fa-database text-[10px] text-indigo-400"></i>
+                  <div className="flex flex-col">
+                    <div className="text-[9px] font-black uppercase tracking-wider text-indigo-400 leading-none">
+                      Firebase Terhubung
+                    </div>
+                    <span className="text-[7px] text-slate-400 font-bold uppercase tracking-tighter mt-0.5">
+                      Input & Lihat Data Aktif
+                    </span>
+                  </div>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>

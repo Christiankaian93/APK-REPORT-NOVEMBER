@@ -163,17 +163,18 @@ async function startServer() {
     res.status(200).json({ status: "ok" });
   });
 
-  // In-memory active presence tracker (eliminates 14,000+ redundant Firestore writes per day!)
+  // In-memory active presence tracker (eliminates redundant Firestore writes per day!)
   const activePresenceUsers = new Map<string, { uid: string; email: string; outlet: string; lastSeen: string; timestamp: number; photoURL?: string; displayName?: string }>();
 
   app.post("/api/presence", (req, res) => {
     try {
       const { uid, email, outlet, photoURL, displayName } = req.body;
-      if (uid) {
-        activePresenceUsers.set(uid, {
-          uid,
+      const key = uid || email || 'anonymous';
+      if (key) {
+        activePresenceUsers.set(key, {
+          uid: key,
           email: email || 'anonymous',
-          outlet: outlet || 'UNKNOWN',
+          outlet: outlet || 'SEMUA OUTLET',
           photoURL: photoURL || '',
           displayName: displayName || (email ? email.split('@')[0] : 'User'),
           lastSeen: new Date().toISOString(),
@@ -189,13 +190,19 @@ async function startServer() {
   app.get("/api/presence", (_req, res) => {
     try {
       const now = Date.now();
-      const cutoff = now - 15 * 60 * 1000; // 15 minutes inactive threshold
+      const cutoff = now - 60 * 1000; // 60 seconds cutoff for active presence
       const activeList: any[] = [];
-      activePresenceUsers.forEach((user, uid) => {
+      const seenEmails = new Set<string>();
+
+      activePresenceUsers.forEach((user, key) => {
         if (user.timestamp > cutoff) {
-          activeList.push(user);
+          const emailKey = (user.email || key).toLowerCase();
+          if (!seenEmails.has(emailKey)) {
+            seenEmails.add(emailKey);
+            activeList.push(user);
+          }
         } else {
-          activePresenceUsers.delete(uid);
+          activePresenceUsers.delete(key);
         }
       });
       res.json({ success: true, users: activeList });

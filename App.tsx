@@ -1,12 +1,12 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { ModuleType, AppState, User, SyncStatus, Outlet, Notification, LeaveRecord, CustomSupplier } from './types';
+import { ModuleType, AppState, User, SyncStatus, Outlet, Notification, LeaveRecord, CustomSupplier, Presence } from './types';
 import { INITIAL_STATE, ROLES_BY_DIVISION, DIVISIONS, OUTLETS, getActiveOutletNames, getStoredCustomSuppliers } from './constants';
 import { fetchUserData, saveGlobalData, saveOutletData, startRealtimeListener, startNotificationListener, isQuotaExceeded, resetQuotaExceeded, fetchAllOutletsData, startAllOutletsListener, testConnection } from './services/cloudService';
 import { safeStorage, safeClipboard, safeWindow } from './lib/safeStorage';
 import { toLocalDateStr } from './lib/dateUtils';
 import { calculateLeaveEntitlement } from './lib/staffUtils';
 import { auth, db } from './firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp, collection, query, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 import Header from './components/Header';
@@ -183,6 +183,7 @@ const App: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [birthdayNotifications, setBirthdayNotifications] = useState<Notification[]>([]);
   const [allOutletsData, setAllOutletsData] = useState<Record<string, any>>({});
+  const [onlineUsers, setOnlineUsers] = useState<Presence[]>([]);
   const [isAllOutletsLoading, setIsAllOutletsLoading] = useState(false);
 
   const [activeModule, setActiveModule] = useState<ModuleType>(() => {
@@ -423,6 +424,78 @@ const App: React.FC = () => {
     });
     return unsubscribe;
   }, [user.isLoggedIn, syncTrigger]);
+
+  // Realtime Presence Tracker for Concurrent Active Users (Cross-tab & Multi-device)
+  useEffect(() => {
+    if (!user.email) return;
+
+    let tabSessionId = sessionStorage.getItem('SH_TAB_SESSION_ID');
+    if (!tabSessionId) {
+      tabSessionId = Math.random().toString(36).substring(2, 9);
+      sessionStorage.setItem('SH_TAB_SESSION_ID', tabSessionId);
+    }
+
+    const uid = auth.currentUser?.uid || user.email.toLowerCase();
+    const presenceKey = `${uid}_${tabSessionId}`;
+
+    const userPhoto = user.photoURL || auth.currentUser?.photoURL || safeStorage.getItem('BARN_USER_PHOTO') || '';
+    const userDisplayName = user.displayName || auth.currentUser?.displayName || safeStorage.getItem('BARN_USER_NAME') || (user.email ? user.email.split('@')[0] : 'User');
+
+    const sendHeartbeat = async () => {
+      try {
+        await fetch('/api/presence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            uid: presenceKey,
+            email: user.email,
+            outlet: user.selectedOutlet || 'SEMUA OUTLET',
+            photoURL: userPhoto,
+            displayName: userDisplayName
+          })
+        });
+      } catch (e) {}
+
+      // Fallback update to Firestore presence doc if user is signed in
+      if (auth.currentUser && !isQuotaExceeded()) {
+        try {
+          const presenceRef = doc(db, 'presence', uid);
+          await setDoc(presenceRef, {
+            uid,
+            email: auth.currentUser.email || user.email,
+            outlet: user.selectedOutlet || 'SEMUA OUTLET',
+            photoURL: userPhoto,
+            displayName: userDisplayName,
+            lastSeen: new Date().toISOString(),
+            timestamp: serverTimestamp()
+          }, { merge: true });
+        } catch {}
+      }
+    };
+
+    sendHeartbeat();
+    const heartbeatTimer = setInterval(sendHeartbeat, 10000); // 10s heartbeat
+
+    const fetchPresence = async () => {
+      try {
+        const res = await fetch('/api/presence');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.users)) {
+            setOnlineUsers(data.users);
+          }
+        }
+      } catch {}
+    };
+
+    fetchPresence();
+    const pollTimer = setInterval(fetchPresence, 3000); // 3s fast poll for instant sync
+
+    return () => {
+      clearInterval(heartbeatTimer);
+      clearInterval(pollTimer);
+    };
+  }, [user.email, user.selectedOutlet, user.photoURL, user.displayName, auth.currentUser?.uid]);
   
   useEffect(() => {
     if (!globalData.staffList) return;
@@ -2449,6 +2522,7 @@ const App: React.FC = () => {
             isRefreshing={isRefreshing}
             notifications={[...birthdayNotifications, ...notifications]}
             toast={toast}
+            onlineUsers={onlineUsers}
           />
         </div>
         {isQuotaExceeded() && (
@@ -2532,7 +2606,7 @@ const App: React.FC = () => {
           </div>
         )}
       </AnimatePresence>
-      <RealtimeFeatures user={user} isAdmin={isAdmin} globalData={globalData} outletMonthlyData={outletMonthlyData} filters={filters} />
+      <RealtimeFeatures user={user} isAdmin={isAdmin} globalData={globalData} outletMonthlyData={outletMonthlyData} filters={filters} onlineUsers={onlineUsers} setOnlineUsers={setOnlineUsers} />
       <DailyReminderPopup user={user} isOnDashboard={activeModule === ModuleType.DASHBOARD} />
       <OutletControlModal
         isOpen={isOutletControlOpen}
